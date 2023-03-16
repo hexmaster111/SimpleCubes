@@ -12,8 +12,8 @@ internal class Program
 
     private static void Main(string[] args)
     {
-        GameBoard = new GameBoard(50);
-        Renderer = new SDLRenderer(HandleEvent, Render, 400, 300);
+        GameBoard = new GameBoard(25);
+        Renderer = new SDLRenderer(HandleEvent, Render, 800, 600);
         GameEngineState = new GameEngineState();
         Ui = new Ui();
         Renderer.Run();
@@ -21,10 +21,14 @@ internal class Program
 
     private static void Render(RenderArgs obj)
     {
+        Ui.Update(ref GameEngineState, ref GameBoard);
         if (!GameEngineState.IsPaused)
             GameBoard.Update();
 
-        Ui.Update(ref GameEngineState, ref GameBoard);
+        if (GameEngineState.IsMouseDown)
+        {
+            GameBoard.SetCellState(GameEngineState.MouseLocation, true);
+        }
 
         GameBoard.Render(obj, ref GameEngineState);
         Ui.Render(obj, GameEngineState);
@@ -39,8 +43,6 @@ internal class Program
         {
             case SDL_EventType.SDL_MOUSEMOTION:
                 {
-
-
                     GameEngineState.SetMouseLocation(obj.motion);
                     break;
                 }
@@ -62,6 +64,7 @@ public class Ui
 {
     private SDL_Rect PlayPauseButton;
     private SDL_Rect StepButton;
+    private SDL_Rect ClearButton;
     private bool IsLayedOut = false;
     public Ui()
     {
@@ -75,6 +78,7 @@ public class Ui
             int buttonHeight = obj.ScreenHeight_px / 10;
             PlayPauseButton = new SDL_Rect() { x = buttonWidth, y = 0, w = buttonWidth, h = buttonHeight };
             StepButton = new SDL_Rect() { x = buttonWidth * 2, y = 0, w = buttonWidth, h = buttonHeight };
+            ClearButton = new SDL_Rect() { x = 0, y = 0, w = buttonWidth, h = buttonHeight };
             IsLayedOut = true;
         }
 
@@ -83,8 +87,6 @@ public class Ui
     internal void Render(RenderArgs obj, in GameEngineState gameEngineState)
     {
         Verifylayout(obj);
-
-
         if (gameEngineState.IsPaused)
             PlayButtonColorPaused.SetAsActiveColor(obj.Renderer);
         else PlayButtonColorPlaying.SetAsActiveColor(obj.Renderer);
@@ -93,8 +95,8 @@ public class Ui
         StepButtonColor.SetAsActiveColor(obj.Renderer);
         SDL_RenderFillRect(obj.Renderer, ref StepButton);
 
-
-
+        ClearButtonColor.SetAsActiveColor(obj.Renderer);
+        SDL_RenderFillRect(obj.Renderer, ref ClearButton);
 
         if (gameEngineState.IsMouseDown)
             SDL_SetRenderDrawColor(obj.Renderer, 255, 0, 0, 255);
@@ -107,6 +109,7 @@ public class Ui
     private SDL_Color PlayButtonColorPaused = new SDL_Color() { a = 255, r = 255, g = 0, b = 0 };
 
     private SDL_Color StepButtonColor = new SDL_Color() { a = 255, r = 0, g = 255, b = 255 };
+    private SDL_Color ClearButtonColor = new SDL_Color() { a = 255, r = 255, g = 255, b = 0 };
 
     internal void Update(ref GameEngineState gameEngineState, ref GameBoard gameBoard)
     {
@@ -127,6 +130,12 @@ public class Ui
                 gameEngineState.IsPaused = true;
                 Console.WriteLine("Step");
             }
+            else if (SDL_HasIntersection(ref gameEngineState.MouseRect, ref ClearButton) == SDL_bool.SDL_TRUE)
+            {
+                gameEngineState.IsMouseDown = false;
+                gameBoard.Clear();
+                Console.WriteLine("Clear");
+            }
         }
     }
 }
@@ -144,11 +153,12 @@ public class GameEngineState
 
     internal void SetMouseLocation(SDL_MouseMotionEvent motion)
     {
+        if (GamePixelScaleHeight == 0) return;
         MouseLocation = new SDL_Point() { x = motion.x, y = motion.y };
         MouseRect = new SDL_Rect()
         {
-            x = MouseLocation.x,
-            y = MouseLocation.y,
+            x = MouseLocation.x - (MouseLocation.x % GamePixelScaleWidth),
+            y = MouseLocation.y - (MouseLocation.y % GamePixelScaleHeight),
             w = GamePixelScaleWidth,
             h = GamePixelScaleHeight
         };
@@ -161,9 +171,16 @@ public class GameEngineState
 public class GameBoard
 {
     private GameCell[][] GameCells;
+    private int sizeSq;
 
 
     public GameBoard(int sizeSq)
+    {
+        this.sizeSq = sizeSq;
+        Clear();
+    }
+
+    internal void Clear(bool random = false)
     {
         GameCells = new GameCell[sizeSq][];
         for (int i = 0; i < GameCells.Length; i++)
@@ -172,11 +189,13 @@ public class GameBoard
             for (int j = 0; j < GameCells[i].Length; j++)
             {
                 GameCells[i][j] = new GameCell();
-                // bool isAlive = new Random().Next(0, 4) == 1;
-                // if (isAlive)
-                // {
-                //     GameCells[i][j].Color = new SDL_Color() { a = 255, r = 255, g = 255, b = 255 };
-                // }
+                if (random)
+                {
+                    if (Random.Shared.Next(0, 4) == 1)
+                    {
+                        GameCells[i][j].Color = new SDL_Color() { a = 255, r = 255, g = 255, b = 255 };
+                    }
+                }
             }
         }
     }
@@ -210,7 +229,15 @@ public class GameBoard
         }
     }
 
+    internal void SetCellState(SDL_Point mouseLocation, bool v)
+    {
 
+        int cellX = mouseLocation.x / GameCells.First().First().RenderLocation.w;
+        int cellY = mouseLocation.y / GameCells.First().First().RenderLocation.h;
+
+
+        GameCells[cellY][cellX].Color = v ? new SDL_Color() { a = 255, r = 255, g = 255, b = 255 } : new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
+    }
 
     internal void Update()
     {
@@ -284,21 +311,22 @@ public class GameCell
     {
         int cellsAliveAroundCount = GetCellsAliveAroundCount(cellsNear);
 
-        if (cellsAliveAroundCount == 3)
+        switch (cellsAliveAroundCount)
         {
-            Color = new SDL_Color() { a = 255, r = 255, g = 255, b = 255 };
-        }
-        else if (cellsAliveAroundCount == 2)
-        {
-            if (Color.r == 255)
-            {
+            case 0:
+            case 1:
+                Color = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
+                break;
+            case 2:
+                break;
+            case 3:
                 Color = new SDL_Color() { a = 255, r = 255, g = 255, b = 255 };
-            }
+                break;
+            default:
+                Color = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
+                break;
         }
-        else
-        {
-            Color = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
-        }
+
     }
 }
 
