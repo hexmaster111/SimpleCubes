@@ -12,6 +12,11 @@ public static class SDLExtentions
             a = color.A
         };
     }
+
+    public static void SetAsActiveColor(this SDL_Color color, IntPtr renderer)
+    {
+        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    }
 }
 
 

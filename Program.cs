@@ -6,30 +6,162 @@ internal class Program
     public static SDLRenderer Renderer { get; private set; }
 
     private static GameBoard GameBoard;
+    private static Ui Ui;
+    private static GameEngineState GameEngineState;
+
 
     private static void Main(string[] args)
     {
         GameBoard = new GameBoard(50);
         Renderer = new SDLRenderer(HandleEvent, Render, 400, 300);
+        GameEngineState = new GameEngineState();
+        Ui = new Ui();
         Renderer.Run();
     }
 
     private static void Render(RenderArgs obj)
     {
-        GameBoard.Update();
-        GameBoard.Render(obj);
+        if (!GameEngineState.IsPaused)
+            GameBoard.Update();
+
+        Ui.Update(ref GameEngineState, ref GameBoard);
+
+        GameBoard.Render(obj, ref GameEngineState);
+        Ui.Render(obj, GameEngineState);
+
     }
 
     private static void HandleEvent(SDL.SDL_Event obj)
     {
         //TODO: Handle mouse events
-        // Console.WriteLine(obj.type);
+        Console.WriteLine(obj.type);
+        switch (obj.type)
+        {
+            case SDL_EventType.SDL_MOUSEMOTION:
+                {
+
+
+                    GameEngineState.SetMouseLocation(obj.motion);
+                    break;
+                }
+            case SDL_EventType.SDL_MOUSEBUTTONDOWN:
+                {
+                    GameEngineState.IsMouseDown = true;
+                    break;
+                }
+            case SDL_EventType.SDL_MOUSEBUTTONUP:
+                {
+                    GameEngineState.IsMouseDown = false;
+                    break;
+                }
+        }
     }
+}
+
+public class Ui
+{
+    private SDL_Rect PlayPauseButton;
+    private SDL_Rect StepButton;
+    private bool IsLayedOut = false;
+    public Ui()
+    {
+    }
+
+    private void Verifylayout(RenderArgs obj)
+    {
+        if (!IsLayedOut)
+        {
+            int buttonWidth = obj.ScreenWidth_Px / 3;
+            int buttonHeight = obj.ScreenHeight_px / 10;
+            PlayPauseButton = new SDL_Rect() { x = buttonWidth, y = 0, w = buttonWidth, h = buttonHeight };
+            StepButton = new SDL_Rect() { x = buttonWidth * 2, y = 0, w = buttonWidth, h = buttonHeight };
+            IsLayedOut = true;
+        }
+
+    }
+
+    internal void Render(RenderArgs obj, in GameEngineState gameEngineState)
+    {
+        Verifylayout(obj);
+
+
+        if (gameEngineState.IsPaused)
+            PlayButtonColorPaused.SetAsActiveColor(obj.Renderer);
+        else PlayButtonColorPlaying.SetAsActiveColor(obj.Renderer);
+        SDL_RenderFillRect(obj.Renderer, ref PlayPauseButton);
+
+        StepButtonColor.SetAsActiveColor(obj.Renderer);
+        SDL_RenderFillRect(obj.Renderer, ref StepButton);
+
+
+
+
+        if (gameEngineState.IsMouseDown)
+            SDL_SetRenderDrawColor(obj.Renderer, 255, 0, 0, 255);
+        else SDL_SetRenderDrawColor(obj.Renderer, 0, 0, 255, 255);
+        SDL_RenderFillRect(obj.Renderer, ref gameEngineState.MouseRect);
+    }
+
+
+    private SDL_Color PlayButtonColorPlaying = new SDL_Color() { a = 255, r = 0, g = 255, b = 0 };
+    private SDL_Color PlayButtonColorPaused = new SDL_Color() { a = 255, r = 255, g = 0, b = 0 };
+
+    private SDL_Color StepButtonColor = new SDL_Color() { a = 255, r = 0, g = 255, b = 255 };
+
+    internal void Update(ref GameEngineState gameEngineState, ref GameBoard gameBoard)
+    {
+        if (gameEngineState.IsMouseDown)
+        {
+            if (SDL_HasIntersection(ref gameEngineState.MouseRect, ref PlayPauseButton) == SDL_bool.SDL_TRUE)
+            {
+                gameEngineState.IsMouseDown = false;
+
+                gameEngineState.IsPaused = !gameEngineState.IsPaused;
+                Console.WriteLine(gameEngineState.IsPaused ? "Paused" : "Playing");
+            }
+            else if (SDL_HasIntersection(ref gameEngineState.MouseRect, ref StepButton) == SDL_bool.SDL_TRUE)
+            {
+                gameEngineState.IsMouseDown = false;
+                gameEngineState.IsPaused = false;
+                gameBoard.Update();
+                gameEngineState.IsPaused = true;
+                Console.WriteLine("Step");
+            }
+        }
+    }
+}
+
+
+public class GameEngineState
+{
+    public bool IsPaused;
+
+    public bool IsMouseDown;
+    public int GamePixelScaleWidth;
+    public int GamePixelScaleHeight;
+    public SDL_Point MouseLocation;
+
+
+    internal void SetMouseLocation(SDL_MouseMotionEvent motion)
+    {
+        MouseLocation = new SDL_Point() { x = motion.x, y = motion.y };
+        MouseRect = new SDL_Rect()
+        {
+            x = MouseLocation.x,
+            y = MouseLocation.y,
+            w = GamePixelScaleWidth,
+            h = GamePixelScaleHeight
+        };
+
+    }
+
+    public SDL_Rect MouseRect;
 }
 
 public class GameBoard
 {
     private GameCell[][] GameCells;
+
 
     public GameBoard(int sizeSq)
     {
@@ -49,10 +181,13 @@ public class GameBoard
         }
     }
 
-    internal void Render(RenderArgs obj)
+    internal void Render(RenderArgs obj, ref GameEngineState gameEngineState)
     {
         int sandHeight = obj.ScreenHeight_px / GameCells.Length;
         int sandWidth = obj.ScreenWidth_Px / GameCells.First().Length;
+
+        gameEngineState.GamePixelScaleHeight = sandHeight;
+        gameEngineState.GamePixelScaleWidth = sandWidth;
 
         for (int rowIndex = 0; rowIndex < GameCells.Length; rowIndex++)
         {
