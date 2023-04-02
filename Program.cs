@@ -1,18 +1,18 @@
-﻿using SDL2;
+﻿using System.Diagnostics;
+using SDL2;
 using static SDL2.SDL;
 
 internal class Program
 {
-    public static SDLRenderer Renderer { get; private set; }
-
+    public static SDLRenderer Renderer;
+    private static GameEngineState GameEngineState;
     private static GameBoard GameBoard;
     private static Ui Ui;
-    private static GameEngineState GameEngineState;
 
 
     private static void Main(string[] args)
     {
-        GameBoard = new GameBoard(25);
+        GameBoard = new GameBoard(100);
         Renderer = new SDLRenderer(HandleEvent, Render, 800, 600);
         GameEngineState = new GameEngineState();
         Ui = new Ui();
@@ -23,11 +23,18 @@ internal class Program
     {
         Ui.Update(ref GameEngineState, ref GameBoard);
         if (!GameEngineState.IsPaused)
+        {
             GameBoard.Update();
+        }
 
         if (GameEngineState.IsMouseDown)
         {
+            // GameEngineState.IsPaused = true;
             GameBoard.SetCellState(GameEngineState.MouseLocation, true);
+        }
+        else if (!GameEngineState.IsMouseDown)
+        {
+            // GameEngineState.IsPaused = false;
         }
 
         GameBoard.Render(obj, ref GameEngineState);
@@ -56,6 +63,31 @@ internal class Program
                     GameEngineState.IsMouseDown = false;
                     break;
                 }
+            case SDL_EventType.SDL_KEYDOWN:
+                {
+                    if (obj.key.keysym.sym == SDL_Keycode.SDLK_SPACE)
+                    {
+                        GameEngineState.IsPaused = !GameEngineState.IsPaused;
+                    }
+
+                    if (obj.key.keysym.sym == SDL_Keycode.SDLK_c)
+                    {
+                        GameBoard.Clear();
+                    }
+
+                    if (obj.key.keysym.sym == SDL_Keycode.SDLK_s)
+                    {
+                        GameBoard.Update();
+                    }
+
+
+                    if (obj.key.keysym.sym == SDL_Keycode.SDLK_r)
+                    {
+                        GameBoard = new GameBoard(100);
+                    }
+
+                    break;
+                }
         }
     }
 }
@@ -66,6 +98,11 @@ public class Ui
     private SDL_Rect StepButton;
     private SDL_Rect ClearButton;
     private bool IsLayedOut = false;
+    private SDL_Color PlayButtonColorPlaying = new SDL_Color() { a = 255, r = 0, g = 255, b = 0 };
+    private SDL_Color PlayButtonColorPaused = new SDL_Color() { a = 255, r = 255, g = 0, b = 0 };
+    private SDL_Color StepButtonColor = new SDL_Color() { a = 255, r = 0, g = 255, b = 255 };
+    private SDL_Color ClearButtonColor = new SDL_Color() { a = 255, r = 255, g = 255, b = 0 };
+
     public Ui()
     {
     }
@@ -105,11 +142,7 @@ public class Ui
     }
 
 
-    private SDL_Color PlayButtonColorPlaying = new SDL_Color() { a = 255, r = 0, g = 255, b = 0 };
-    private SDL_Color PlayButtonColorPaused = new SDL_Color() { a = 255, r = 255, g = 0, b = 0 };
 
-    private SDL_Color StepButtonColor = new SDL_Color() { a = 255, r = 0, g = 255, b = 255 };
-    private SDL_Color ClearButtonColor = new SDL_Color() { a = 255, r = 255, g = 255, b = 0 };
 
     internal void Update(ref GameEngineState gameEngineState, ref GameBoard gameBoard)
     {
@@ -118,7 +151,6 @@ public class Ui
             if (SDL_HasIntersection(ref gameEngineState.MouseRect, ref PlayPauseButton) == SDL_bool.SDL_TRUE)
             {
                 gameEngineState.IsMouseDown = false;
-
                 gameEngineState.IsPaused = !gameEngineState.IsPaused;
                 Console.WriteLine(gameEngineState.IsPaused ? "Paused" : "Playing");
             }
@@ -180,7 +212,7 @@ public class GameBoard
         Clear();
     }
 
-    internal void Clear(bool random = false)
+    internal void Clear(bool random = true)
     {
         GameCells = new GameCell[sizeSq][];
         for (int i = 0; i < GameCells.Length; i++)
@@ -235,6 +267,8 @@ public class GameBoard
         int cellX = mouseLocation.x / GameCells.First().First().RenderLocation.w;
         int cellY = mouseLocation.y / GameCells.First().First().RenderLocation.h;
 
+        if (cellY > GameCells.First().Count()) return;
+        if (cellX > GameCells.First().Count()) return;
 
         GameCells[cellY][cellX].Color = v ? new SDL_Color() { a = 255, r = 255, g = 255, b = 255 } : new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
     }
@@ -259,18 +293,19 @@ public class GameBoard
                     cellRowIndex < GameCells.Length - 1 && cellColIndex < GameCells.Length - 1 ? GameCells[cellRowIndex + 1][cellColIndex + 1] : null
                 );
 
-                CellsAround cellsNearbyWithWorldWrapping = new CellsAround(
-                    cellRowIndex == 0 && cellColIndex == 0 ? GameCells[GameCells.Length - 1][GameCells.Length - 1] : cellsNearby.TopLeft,
-                    cellRowIndex == 0 ? GameCells[GameCells.Length - 1][cellColIndex] : cellsNearby.Top,
-                    cellRowIndex == 0 && cellColIndex == GameCells.Length - 1 ? GameCells[GameCells.Length - 1][0] : cellsNearby.TopRight,
-                    cellColIndex == 0 ? GameCells[cellRowIndex][GameCells.Length - 1] : cellsNearby.Left,
-                    cellColIndex == GameCells.Length - 1 ? GameCells[cellRowIndex][0] : cellsNearby.Right,
-                    cellRowIndex == GameCells.Length - 1 && cellColIndex == 0 ? GameCells[0][GameCells.Length - 1] : cellsNearby.BottomLeft,
-                    cellRowIndex == GameCells.Length - 1 ? GameCells[0][cellColIndex] : cellsNearby.Bottom,
-                    cellRowIndex == GameCells.Length - 1 && cellColIndex == GameCells.Length - 1 ? GameCells[0][0] : cellsNearby.BottomRight
-                );
+                cell.Update(cellRowIndex, cellColIndex, cellsNearby);
+            }
+        }
 
-                cell.Update(cellRowIndex, cellColIndex, cellsNearbyWithWorldWrapping);
+
+        for (int cellRowIndex = 0; cellRowIndex < GameCells.Length; cellRowIndex++)
+        {
+            GameCell[]? cellRow = GameCells[cellRowIndex];
+            for (int cellColIndex = 0; cellColIndex < cellRow.Length; cellColIndex++)
+            {
+                GameCell? cell = cellRow[cellColIndex];
+                if (cell == null) continue;
+                cell.SetNewColor();
             }
         }
     }
@@ -284,6 +319,7 @@ public class GameCell
 {
     public Rules Rules;
     public SDL_Color Color = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
+    private SDL_Color _colorBuffer;
     public SDL_Rect RenderLocation;
     public bool HasBeenPlaced = false;
 
@@ -291,6 +327,11 @@ public class GameCell
     {
         RenderLocation = sDL_Rect;
         HasBeenPlaced = true;
+    }
+
+    public void SetNewColor()
+    {
+        Color = _colorBuffer;
     }
 
     private int GetCellsAliveAroundCount(CellsAround cellsAround)
@@ -315,18 +356,23 @@ public class GameCell
         {
             case 0:
             case 1:
-                Color = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
+                _colorBuffer = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
                 break;
             case 2:
                 break;
             case 3:
-                Color = new SDL_Color() { a = 255, r = 255, g = 255, b = 255 };
+                _colorBuffer = new SDL_Color() { a = 255, r = 255, g = 255, b = 255 };
                 break;
             default:
-                Color = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
+                _colorBuffer = new SDL_Color() { a = 255, r = 0, g = 0, b = 0 };
                 break;
         }
 
+    }
+
+    public override string ToString()
+    {
+        return (Color.r == 255 ? "Alive" : "Dead") + $"x:{RenderLocation.x} y: {RenderLocation.y}";
     }
 }
 
